@@ -79,33 +79,6 @@ class MLP(nn.Module):
         plt.legend()
         plt.show()
 
-    # 预测
-    def pred_Y(self, X, Y=0):
-        self.model.eval()
-        X = X.to(device)
-        Y = Y.to(device)
-
-        fake_y = self.model(X)
-        if Y == 0:
-            print("pred Y:{}".format(fake_y))
-        else:
-            print("pred Y:{}, real Y:{}".format(fake_y, Y))
-
-    # 验证
-    def valid(self, X, Y):
-        self.model.eval()
-        fake_y = self.model(X).squeeze()
-        with torch.no_grad():
-            loss = torch.mean((fake_y - Y) ** 2)
-        return loss.item()
-
-    # 保存模型
-    def save_model(self):
-        torch.save(self.model, "./model/model.pth")
-
-
-
-
 
 # 定义超参数，输入维度，输出维度，batch size， 学习率， 训练代数，训练设备
 in_dim = entire_data.shape[-1] - 1
