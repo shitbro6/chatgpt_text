@@ -70,41 +70,7 @@ class MLP(nn.Module):
             all_valid_loss.append(valid_loss)
             if epoch % 100 == 0:
                 print("epoch : {}, train loss : {}, validation loss: {}".format(epoch, train_loss / (t + 1),
-                                                                                valid_loss))
-        # 训练完成后画收敛图
-        all_train_loss = torch.tensor(all_train_loss)
-        all_valid_loss = torch.tensor(all_valid_loss)
-        plt.semilogy(np.arange(all_train_loss.shape[0]), all_train_loss, label="train_loss")
-        plt.semilogy(np.arange(all_valid_loss.shape[0]), all_valid_loss, label="valid_loss")
-        plt.legend()
-        plt.show()
-
-    # 预测
-    def pred_Y(self, X, Y=0):
-        self.model.eval()
-        X = X.to(device)
-        Y = Y.to(device)
-
-        fake_y = self.model(X)
-        if Y == 0:
-            print("pred Y:{}".format(fake_y))
-        else:
-            print("pred Y:{}, real Y:{}".format(fake_y, Y))
-
-    # 验证
-    def valid(self, X, Y):
-        self.model.eval()
-        fake_y = self.model(X).squeeze()
-        with torch.no_grad():
-            loss = torch.mean((fake_y - Y) ** 2)
-        return loss.item()
-
-    # 保存模型
-    def save_model(self):
-        torch.save(self.model, "./model/model.pth")
-
-
-
+                                                                                valid_loss))  
 
 
 # 定义超参数，输入维度，输出维度，batch size， 学习率， 训练代数，训练设备
@@ -126,4 +92,3 @@ MLP_model = MLP(in_dim=in_dim, out_dim=out_dim).to(device)
 
 # 训练并保存模型
 MLP_model.train(dataloader=dataloader, epochs=epochs, valid_X=valid_data, valid_Y=valid_label)
-# # MLP_model.save_model()
