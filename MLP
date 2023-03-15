@@ -1,0 +1,129 @@
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from osgeo import gdal
+import os
+import math
+
+
+class MLP(nn.Module):
+    def __init__(self, in_dim, out_dim, hidden_nodes=[256, 256]):
+        super(MLP, self).__init__()
+        # 定义输入和输出大小
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        # 定义神经网络模块
+        module = []
+        dropout_rate=0.2
+        for hidden_node in hidden_nodes:
+            module.append(nn.Sequential(nn.Linear(in_dim, hidden_node), nn.LeakyReLU(), nn.Dropout(p=dropout_rate)))
+            in_dim = hidden_node
+        module.append(nn.Linear(in_dim, out_dim))
+        self.model = nn.Sequential(*module)
+
+        # 定义训练设备，batch size大小， 学习率， 神经网络的优化器
+        self.device = device
+        self.batch_size = batch_size
+        self.lr = lr
+        self.optim = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(0.5, 0.9),weight_decay=1e-5)
+
+    # 神经网络前馈过程
+    def forward(self, x):
+        return self.model(x)
+
+    # 训练过程，输入为data的loader, 训练的代数， 验证集X，Y
+    def train(self, dataloader, epochs, valid_X, valid_Y):
+        self.model.train()
+        print(epochs,device,batch_size,lr)
+        all_train_loss = []
+        all_valid_loss = []
+        # 训练epoch轮
+        for epoch in np.arange(epochs):
+            train_loss = 0
+            for (t, [X, Y]) in enumerate(dataloader):
+
+                # print(data[0].size(), data[1].size())
+                # 优化器梯度清空
+                self.optim.zero_grad()
+                # 将训练数据转移到训练设备上
+                X = X.to(self.device)
+                Y = Y.to(self.device)
+
+                # 神经网络前馈计算
+                fake_y = self.model(X).squeeze()
+
+                # 计算loss。使用的是MSE
+                loss = torch.mean((fake_y - Y) ** 2)
+
+                # 梯度回传，优化器更新神经网络
+                loss.backward()
+                self.optim.step()
+
+                train_loss += loss.item()
+
+            valid_loss = self.valid(valid_X, valid_Y)
+            self.model.train()
+            all_train_loss.append(train_loss)
+            all_valid_loss.append(valid_loss)
+            if epoch % 100 == 0:
+                print("epoch : {}, train loss : {}, validation loss: {}".format(epoch, train_loss / (t + 1),
+                                                                                valid_loss))
+        # 训练完成后画收敛图
+        all_train_loss = torch.tensor(all_train_loss)
+        all_valid_loss = torch.tensor(all_valid_loss)
+        plt.semilogy(np.arange(all_train_loss.shape[0]), all_train_loss, label="train_loss")
+        plt.semilogy(np.arange(all_valid_loss.shape[0]), all_valid_loss, label="valid_loss")
+        plt.legend()
+        plt.show()
+
+    # 预测
+    def pred_Y(self, X, Y=0):
+        self.model.eval()
+        X = X.to(device)
+        Y = Y.to(device)
+
+        fake_y = self.model(X)
+        if Y == 0:
+            print("pred Y:{}".format(fake_y))
+        else:
+            print("pred Y:{}, real Y:{}".format(fake_y, Y))
+
+    # 验证
+    def valid(self, X, Y):
+        self.model.eval()
+        fake_y = self.model(X).squeeze()
+        with torch.no_grad():
+            loss = torch.mean((fake_y - Y) ** 2)
+        return loss.item()
+
+    # 保存模型
+    def save_model(self):
+        torch.save(self.model, "./model/model.pth")
+
+
+
+
+
+# 定义超参数，输入维度，输出维度，batch size， 学习率， 训练代数，训练设备
+in_dim = entire_data.shape[-1] - 1
+out_dim = 1
+batch_size = 64
+lr = 5e-5
+epochs = 10000
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
+print("device :{}".format(device))
+
+# 构造dataloader
+dataset = TensorDataset(train_data, train_label)
+dataloader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=True)
+
+# 构建MLP网络
+MLP_model = MLP(in_dim=in_dim, out_dim=out_dim).to(device)
+
+# 训练并保存模型
+MLP_model.train(dataloader=dataloader, epochs=epochs, valid_X=valid_data, valid_Y=valid_label)
+# # MLP_model.save_model()
