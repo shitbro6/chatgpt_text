@@ -7,28 +7,156 @@ import pandas as pd
 from osgeo import gdal
 import os
 import math
+from torch.optim.lr_scheduler import CosineAnnealingLR
+import torch.optim as optim
+
+
+def read_tif(filename):
+    '''
+    主要用于读取tif文件数据
+    :param filename: 文件夹路径名，要包含文件名和后缀名
+    :return: 返回获取到的数据，为数组格式
+    '''
+    dataset = gdal.Open(str(filename))
+
+    if dataset == None:
+        print(filename + "无法打开")
+        return
+    im_width = dataset.RasterXSize  # 栅格矩阵的列数（宽）
+    im_height = dataset.RasterYSize  # 栅格矩阵的行数（高）
+    im_bands = dataset.RasterCount  # 波段数
+    im_data = dataset.GetRasterBand(1).ReadAsArray()  # 获取数据 .GetRasterBand(1)表示第波段1,ReadAsArray将栅格图像各波段的信息读取为Array数组格式
+    im_geotrans = dataset.GetGeoTransform()  # 获取仿射矩阵信息,栅格数据的六参数。
+    im_proj = dataset.GetProjection()  # 获取投影信息
+    return im_data
+
+
+def iterate_all_folders(path,all_data):
+    '''
+    :param path: 路径，等级：D:\中科院-空天所\数据集\各地区完成数据-tif文件格式\2019\ZQ
+    :param all_data: 存放全部数据，二维数组，(数据条数，字段个数)
+    :return:
+    '''
+    name_list = [
+        "海拔", "坡向", "坡度", "起伏度", "降水", "温度", "人口",
+        "到水源的距离", "GDP", "NDVI", "耕地",
+        "林地", "草地", "荒地", "灯光"
+    ]
+    # 只有在训练模式下才会把牲畜密度这一栏加进来，测试不需要
+
+    individual_areas_data = []
+    # 读取文件的地方，只需要修改一下文件名
+    for name in name_list:
+        data_path = path + "/{}.tif".format(name)
+        im_data = read_tif(data_path)
+
+        # np.set_printoptions(threshold=np.inf) # 显示全部数据
+        data_1d = np.squeeze(im_data.reshape(-1, 1))   #  (-1,1)转成一列 在经过squeeze变成一行
+        res = []
+        if name == "海拔":
+            data_min = 150
+            data_max = 8848
+        elif name == "坡向":
+            data_min = -1
+            data_max = 360
+        elif name == "坡度":
+            data_min = 0
+            data_max = 20
+        elif name == "起伏度":
+            data_min = 0
+            data_max = 600
+        elif name == "降水":
+            data_min = 0
+            data_max = 10000
+        elif name == "温度":
+            data_min = -45
+            data_max = 45
+        elif name == "人口":
+            data_min = 0
+            data_max = 200000
+        elif name == "到水源的距离":
+            data_min = 0
+            data_max = 1000000
+        elif name == "GDP":
+            data_min = 0
+            data_max = 110
+        elif name == "NDVI":
+            data_min = 0
+            data_max = 1
+        elif name == "耕地":
+            data_min = 0
+            data_max = 1
+        elif name == "林地":
+            data_min = 0
+            data_max = 1
+        elif name == "草地":
+            data_min = 0
+            data_max = 1
+        elif name == "荒地":
+            data_min = 0
+            data_max = 1
+        elif name == "灯光":
+            data_min = 0
+            data_max = 6666
+
+        # 找到所有的正常数据
+        normal_data = data_1d[(data_1d <= data_max) & (data_1d >= data_min)]  # 正常值
+        mean_normal_data = np.mean(normal_data)
+        # 将某一地区的某个变量栅格均值加入数组
+        individual_areas_data.append(mean_normal_data)
+    # 将该地区的每个变量值均值加入总数组
+    all_data.append(individual_areas_data)
+
+
+def process_data(data_path):
+    '''
+
+    :param data_path: 需定位到 D:\中科院-空天所\数据集\各地区完成数据-tif文件格式
+    :return: 返回处理好的数据组，(数据条数，字段个数)
+    '''
+
+
+    all_data = []
+
+    path_down1_list = os.listdir(data_path)  # 这一级是 2000 2001
+    for temp in path_down1_list:
+
+        path_down2 = os.path.join(data_path,temp)
+        print(path_down2)
+        path_down2_list = os.listdir(path_down2)  # 这一级是 ARQ GH
+        for temp_down in path_down2_list:
+            path_down3 = os.path.join(path_down2,temp_down)  # D:\中科院-空天所\数据集\各地区完成数据-tif文件格式\2019\ZQ
+
+            iterate_all_folders(path_down3,all_data)
+    entire_data = np.array(all_data)
+    return entire_data
 
 
 class MLP(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_nodes=[256, 256]):
+    def __init__(self, in_dim, out_dim, num_layers=6, hidden_size=512, intermediate_size=2048, dropout_rate=0.2):
         super(MLP, self).__init__()
         # 定义输入和输出大小
         self.in_dim = in_dim
         self.out_dim = out_dim
         # 定义神经网络模块
         module = []
-        dropout_rate=0.2
-        for hidden_node in hidden_nodes:
-            module.append(nn.Sequential(nn.Linear(in_dim, hidden_node), nn.LeakyReLU(), nn.Dropout(p=dropout_rate)))
-            in_dim = hidden_node
-        module.append(nn.Linear(in_dim, out_dim))
+        module.append(nn.Linear(in_dim, hidden_size))
+        module.append(nn.LeakyReLU())
+        module.append(nn.Dropout(p=dropout_rate))
+        for i in range(num_layers-2):
+            module.append(nn.Linear(hidden_size, intermediate_size))
+            module.append(nn.LeakyReLU())
+            module.append(nn.Dropout(p=dropout_rate))
+            hidden_size = intermediate_size
+        module.append(nn.Linear(hidden_size, out_dim))
         self.model = nn.Sequential(*module)
 
         # 定义训练设备，batch size大小， 学习率， 神经网络的优化器
         self.device = device
         self.batch_size = batch_size
         self.lr = lr
-        self.optim = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(0.5, 0.9),weight_decay=1e-5)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, betas=(0.5, 0.9),weight_decay=1e-5)
+        self.lr_scheduler = CosineAnnealingLR(self.optimizer, T_max=10)
 
     # 神经网络前馈过程
     def forward(self, x):
@@ -47,10 +175,10 @@ class MLP(nn.Module):
 
                 # print(data[0].size(), data[1].size())
                 # 优化器梯度清空
-                self.optim.zero_grad()
+                self.optimizer.zero_grad()
                 # 将训练数据转移到训练设备上
-                X = X.to(self.device)
-                Y = Y.to(self.device)
+                X = X.to(device)
+                Y = Y.to(device)
 
                 # 神经网络前馈计算
                 fake_y = self.model(X).squeeze()
@@ -60,9 +188,10 @@ class MLP(nn.Module):
 
                 # 梯度回传，优化器更新神经网络
                 loss.backward()
-                self.optim.step()
+                self.optimizer.step()
 
                 train_loss += loss.item()
+            self.lr_scheduler.step()
 
             valid_loss = self.valid(valid_X, valid_Y)
             self.model.train()
@@ -70,20 +199,92 @@ class MLP(nn.Module):
             all_valid_loss.append(valid_loss)
             if epoch % 100 == 0:
                 print("epoch : {}, train loss : {}, validation loss: {}".format(epoch, train_loss / (t + 1),
-                                                                                valid_loss))  
+                                                                                valid_loss))
+        # 训练完成后画收敛图
+        all_train_loss = torch.tensor(all_train_loss)
+        all_valid_loss = torch.tensor(all_valid_loss)
+        plt.semilogy(np.arange(all_train_loss.shape[0]), all_train_loss, label="train_loss")
+        plt.semilogy(np.arange(all_valid_loss.shape[0]), all_valid_loss, label="valid_loss")
+        plt.legend()
+        plt.show()
+
+    # 预测
+    def pred_Y(self, X, Y=0):
+        self.model.eval()
+        X = X.to(device)
+        Y = Y.to(device)
+
+        fake_y = self.model(X)
+        if Y == 0:
+            print("pred Y:{}".format(fake_y))
+        else:
+            print("pred Y:{}, real Y:{}".format(fake_y, Y))
+
+    # 验证
+    def valid(self, X, Y):
+        self.model.eval()
+        fake_y = self.model(X).squeeze()
+        with torch.no_grad():
+            loss = torch.mean((fake_y - Y) ** 2)
+        return loss.item()
+
+    # 保存模型
+    def save_model(self):
+        torch.save(self.model, "./model/model.pth")
+
+
+data_path = r"D:\中科院-空天所\数据集\各地区完成数据-tif文件格式"
+entire_data = process_data(data_path)
+
+
+use_tif = True
+if use_tif == True:
+    # 这是相当于把tif中的数据读出来，然后拼上了牲畜密度，得到的entire_data就和处理好的excel一样
+    # 牲畜的密度要和tif数据对应上
+    # 牲畜密度的excel地址，header=0是去除首行的文字解释
+    file_path = r"C:\Users\Administrator\Desktop\训练数据统计\测试\只有牲畜密度的 - 副本.xlsx"
+    data = torch.tensor(process_data(data_path), dtype=torch.float32)
+    label = torch.tensor(np.expand_dims(np.array(list(pd.read_excel(file_path, header=0).values[:, 1])), axis=-1),
+                         dtype=torch.float32)
+    entire_data = torch.cat([data, label], dim=-1)
+
+# 90%的数据用来训练，10%用来验证
+train_data_num = int(entire_data.shape[0] * 0.9)
+valid_data_num = entire_data.shape[0] - train_data_num
+
+# 训练数据
+train_data = entire_data[0:train_data_num, 0:-1]
+train_label = entire_data[0:train_data_num, -1]
+
+# 最大最小归一化
+train_data_max = torch.max(train_data, dim=0)[0]
+train_data_min = torch.min(train_data, dim=0)[0]
+train_label_max = torch.max(train_label, dim=0)[0]
+train_label_min = torch.min(train_label, dim=0)[0]
+train_data = (train_data - train_data_min) / (train_data_max - train_data_min)
+train_label = (train_label - train_label_min) / (train_label_max - train_label_min)
+
+# 使用训练数据标准化验证集
+valid_data = (entire_data[train_data_num:-1, 0:-1] - train_data_min) / (train_data_max - train_data_min)
+valid_label = (entire_data[train_data_num:-1, -1] - train_label_min) / (train_label_max - train_label_min)
+
+# 显示全部+取消科学计数法
+# torch.set_printoptions(threshold=math.inf, precision=6, sci_mode=False)
+
 
 
 # 定义超参数，输入维度，输出维度，batch size， 学习率， 训练代数，训练设备
 in_dim = entire_data.shape[-1] - 1
 out_dim = 1
-batch_size = 64
-lr = 5e-5
+batch_size = 8
+lr = 0.001
 epochs = 10000
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu")
 print("device :{}".format(device))
 
 # 构造dataloader
+
 dataset = TensorDataset(train_data, train_label)
 dataloader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=True)
 
@@ -92,3 +293,6 @@ MLP_model = MLP(in_dim=in_dim, out_dim=out_dim).to(device)
 
 # 训练并保存模型
 MLP_model.train(dataloader=dataloader, epochs=epochs, valid_X=valid_data, valid_Y=valid_label)
+# # MLP_model.save_model()
+
+
