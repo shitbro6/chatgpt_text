@@ -1,0 +1,52 @@
+
+### 配置环境
+python 3.6
+dlib == 19.7.0  (dlib无法使用pip安装，见dlib安装说明)
+
+### 安装一下第三方库
+altgraph==0.17.3 √
+autopep8==2.0.0 √
+decorator==4.4.2  √
+dlib==19.7.0 √
+future==0.18.2 √
+imageio==2.9.0 √
+importlib-metadata==4.8.3 √
+imutils==0.5.4 √
+iso8601==1.1.0 √
+networkx==2.5.1 √
+numpy==1.19.4 √
+opencv-python==4.4.0.46 √
+pandas==1.1.4 √
+pefile==2022.5.30 √
+Pillow==8.0.1 √ 
+pycodestyle==2.9.1 √ 
+pyinstaller==4.10 √
+pyinstaller-hooks-contrib==2022.0 √
+pyserial==3.5 √
+python-dateutil==2.8.2 √
+pytz==2022.6 √ 
+PyWavelets==1.1.1 √
+pywin32-ctypes==0.2.0 √
+PyYAML==6.0 √ 
+scikit-image==0.15.0 √
+scipy==1.5.4 √
+six==1.16.0 √
+tomli==1.2.3 √
+typing_extensions==4.1.1 √
+zipp==3.6.0 √
+
+----------------------------
+
+如果不想一个一个装，可以直接使用
+
+pip install -r requirements.txt
+
+(建议一个一个装)
+
+### 代码运行
+
+fatigue_UI.py   tkinter界面，直接运行即可
+
+或者终端下：python fatigue_UI.py
+
+
